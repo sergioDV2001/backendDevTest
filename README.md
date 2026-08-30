@@ -139,68 +139,24 @@ El resultado del test de carga (k6) se resume en el apartado
 
 ## Decisiones técnicas
 
-### Lenguaje y framework
-
-- **Java 21 + Spring Boot WebFlux (reactivo).** Un modelo no bloqueante escala mejor
-  bajo carga cuando el servicio pasa la mayor parte del tiempo esperando respuestas de
-  APIs externas, como es el caso.
-
-### Arquitectura y dominio
-
-- **Hexagonal (ports & adapters).** El dominio y los casos de uso no dependen de Spring
-  ni de detalles de transporte; se comunican con el exterior a través de puertos
-  (interfaces). Esto aísla los cambios técnicos y permite testear la lógica de negocio
-  con dobles, sin levantar el servidor ni llamar a APIs reales.
-- **DDD.** `ProductId` es un value object con su invariante (no puede estar vacío);
-  `ProductDetail` modela el detalle del producto. La regla "devolver los similares que
-  sí se pudieron obtener" vive en la capa de aplicación, porque es negocio, no técnica.
-- **Orden por similitud.** El caso de uso resuelve los detalles con `flatMapSequential`,
-  que ejecuta las llamadas en paralelo **preservando el orden** de los IDs que exige el
-  contrato, con un límite de concurrencia para no saturar al upstream.
-
-### Resiliencia
-
-- **Timeout por petición (2s, configurable).** Evita que una dependencia lenta bloquee
-  la respuesta. Los mocks simulan retardos de hasta 50s; con el timeout, esos casos se
-  cortan a 2s en lugar de colgar la petición.
-- **Circuit breaker (Resilience4j), compartido y tolerante.** Salta solo ante una caída
-  **generalizada** del upstream (umbral de fallos del 80% sobre una ventana de 100
-  llamadas), no ante productos lentos o con error puntuales. Un breaker demasiado
-  sensible sería contraproducente: convertiría la degradación elegante en errores 500.
-  Ignora los 404 (son "no encontrado", no un fallo del servicio).
-- **Degradación ante fallo parcial.** Si el detalle de un similar falla o expira, se
-  **omite** (`onErrorResume`) y se devuelve el resto, en vez de romper toda la respuesta.
-- **404 limpio.** Si el producto base no existe, el adaptador traduce el 404 del upstream
-  a una excepción de dominio (`ProductNotFoundException`) que un `@RestControllerAdvice`
-  convierte en un HTTP 404.
-- **Sin reintentos (decisión deliberada).** Los fallos de los mocks son deterministas
-  (un producto que da 500 lo dará siempre), así que reintentar solo añadiría carga y
-  latencia bajo el test de rendimiento sin mejorar el resultado.
-
-### Rendimiento
-
-- **Caché de detalles de producto (Caffeine).** Los datos de producto no cambian en cada
-  petición y un mismo producto aparece como similar de muchos otros, así que se cachean
-  (tamaño y expiración configurables; por defecto 10.000 entradas y 60s). Se implementa
-  como un **decorador** sobre el puerto, sin tocar el adaptador HTTP (separación de
-  responsabilidades). Los fallos **no** se cachean, para no fijar un error transitorio.
-- **Concurrencia.** Los detalles de los similares se piden en paralelo (con un tope de
-  50 simultáneos).
-
-### Testing
-
-- **Lógica de negocio** (caso de uso) con puertos simulados y `StepVerifier`: orden,
-  lista vacía y degradación ante un detalle que falla.
-- **Contrato REST** con un test de slice (`@WebFluxTest` + `WebTestClient`): forma del
-  JSON y respuesta 404.
-- **Caché**: se verifica que una segunda consulta no vuelve a llamar por HTTP.
+- **Java 21 + Spring Boot WebFlux (reactivo):** no bloqueante, escala mejor cuando el
+  servicio pasa el tiempo esperando a APIs externas.
+- **Arquitectura hexagonal + DDD:** el dominio y los casos de uso no dependen de Spring;
+  el exterior entra por puertos (interfaces), lo que permite testear la lógica con
+  dobles. `ProductId` es un value object y la regla de "devolver los similares que se
+  pudieron obtener" vive en la aplicación.
+- **Resiliencia:** timeout por petición (2s), circuit breaker tolerante (solo salta ante
+  una caída generalizada del upstream, no ante productos lentos puntuales), degradación
+  (se omite el similar que falla) y 404 si el producto base no existe.
+- **Rendimiento:** caché de detalles con Caffeine (decorador sobre el puerto; los fallos
+  no se cachean) y detalles resueltos en paralelo preservando el orden.
+- **Sin reintentos (deliberado):** los fallos del mock son deterministas, así que
+  reintentar solo añadiría carga y latencia.
 
 ### Resultado del test de carga (k6)
 
-Con 200 usuarios concurrentes en escenarios normal, no-encontrado, error, lento y muy
-lento: **100% de respuestas 2xx** (0% de errores gracias a la degradación) y tiempos
-acotados por el timeout (p95 ≈ 2s, máximo ≈ 2,1s; sin peticiones colgadas pese a
-upstreams de 5s y 50s).
+200 usuarios concurrentes: **100% de respuestas 2xx** y latencia acotada por el timeout
+(p95 ≈ 2s), sin peticiones colgadas pese a upstreams de 5s/50s.
 
 ## Nota sobre el enunciado
 
