@@ -50,4 +50,19 @@ class GetSimilarProductsServiceTest {
         StepVerifier.create(service.getSimilarProducts(productId))
                 .verifyComplete();
     }
+
+    @Test
+    void skipsSimilarProductsWhoseDetailFails() {
+        ProductId productId = new ProductId("1");
+        ProductDetail dress = new ProductDetail(new ProductId("2"), "Dress", 19.99, true);
+        when(similarProductIdsPort.getSimilarIds(productId))
+                .thenReturn(Flux.just(new ProductId("2"), new ProductId("3")));
+        when(productDetailPort.getById(new ProductId("2"))).thenReturn(Mono.just(dress));
+        when(productDetailPort.getById(new ProductId("3")))
+                .thenReturn(Mono.error(new RuntimeException("upstream failure")));
+
+        StepVerifier.create(service.getSimilarProducts(productId))
+                .expectNext(dress)
+                .verifyComplete();
+    }
 }

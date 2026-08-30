@@ -3,9 +3,11 @@ package com.similarproducts.infrastructure.http.in;
 import com.similarproducts.application.GetSimilarProductsUseCase;
 import com.similarproducts.domain.model.ProductDetail;
 import com.similarproducts.domain.model.ProductId;
+import com.similarproducts.domain.model.ProductNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Flux;
@@ -13,6 +15,7 @@ import reactor.core.publisher.Flux;
 import static org.mockito.Mockito.when;
 
 @WebFluxTest(SimilarProductsController.class)
+@Import(GlobalExceptionHandler.class)
 class SimilarProductsControllerTest {
 
     @Autowired
@@ -37,5 +40,15 @@ class SimilarProductsControllerTest {
                 .jsonPath("$[0].price").isEqualTo(19.99)
                 .jsonPath("$[0].availability").isEqualTo(true)
                 .jsonPath("$[1].id").isEqualTo("3");
+    }
+
+    @Test
+    void returnsNotFoundWhenProductDoesNotExist() {
+        when(getSimilarProductsUseCase.getSimilarProducts(new ProductId("6")))
+                .thenReturn(Flux.error(new ProductNotFoundException(new ProductId("6"))));
+
+        webTestClient.get().uri("/product/6/similar")
+                .exchange()
+                .expectStatus().isNotFound();
     }
 }
