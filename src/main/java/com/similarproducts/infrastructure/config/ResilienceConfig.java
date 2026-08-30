@@ -16,12 +16,11 @@ public class ResilienceConfig {
     public CircuitBreaker upstreamCircuitBreaker() {
         CircuitBreakerConfig config = CircuitBreakerConfig.custom()
                 .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
-                .slidingWindowSize(20)
-                .failureRateThreshold(50f)
-                .slowCallRateThreshold(50f)
-                .slowCallDurationThreshold(Duration.ofSeconds(2))
+                .slidingWindowSize(100)
+                .minimumNumberOfCalls(50)
+                .failureRateThreshold(80f)
                 .waitDurationInOpenState(Duration.ofSeconds(5))
-                .permittedNumberOfCallsInHalfOpenState(5)
+                .permittedNumberOfCallsInHalfOpenState(10)
                 .ignoreExceptions(ProductNotFoundException.class, WebClientResponseException.NotFound.class)
                 .build();
         return CircuitBreaker.of("upstream", config);
