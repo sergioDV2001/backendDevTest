@@ -8,3 +8,7 @@ server:
 upstream:
   base-url: http://localhost:3001
   timeout: 2s
+
+cache:
+  maximum-size: 10000
+  expire-after-write: 60s
